@@ -73,12 +73,16 @@ void IRQbspInit()
     GPIOH->OSPEEDR=0xaaaaaaaa;
     GPIOI->OSPEEDR=0xaaaaaaaa;
     _led::mode(Mode::OUTPUT);
+    _greenLed::mode(Mode::OUTPUT);
     ledOn();
     delayMs(100);
     ledOff();
     DefaultConsole::instance().IRQset(intrusive_ref_ptr<Device>(
         new STM32Serial(defaultSerial,defaultSerialSpeed,
         defaultSerialFlowctrl ? STM32Serial::RTSCTS : STM32Serial::NOFLOWCTRL)));
+    greenLedOn();
+    delayMs(1000);
+    greenLedOff();
 }
 
 void bspInit2()
