@@ -81,17 +81,6 @@ void IRQbspInit()
         new STM32Serial(defaultSerial,defaultSerialSpeed,
         defaultSerialFlowctrl ? STM32Serial::RTSCTS : STM32Serial::NOFLOWCTRL)));
 
-    volatile int* pippo = (int*)malloc(10 * sizeof(int));
-
-    if(pippo == NULL){
-        ledOn();
-        delayMs(1000);
-        ledOff();
-    } else {
-        greenLedOn();
-        delayMs(500);
-        greenLedOff();
-    }
 }
 
 

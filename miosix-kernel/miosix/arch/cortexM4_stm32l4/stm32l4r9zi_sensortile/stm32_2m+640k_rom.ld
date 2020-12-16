@@ -5,22 +5,6 @@
  */
 
 /*
- * This chip has an unusual quirk that the RAM is divided in two block mapped
- * at two non contiguous memory addresses. I don't know why they've done that,
- * probably doing the obvious thing would have made writing code too easy...
- * Anyway, since hardware can't be changed, we've got to live with that and
- * try to make use of both RAMs.
- * 
- * Given the constraints above, this linker script puts:
- * - read only data and code (.text, .rodata, .eh_*) in FLASH
- * - the 512Byte main (IRQ) stack, .data and .bss in the "small" 32KB RAM
- * - stacks and heap in the "large" 96KB RAM.
- * 
- * Unfortunately thread stacks can't be put in the small RAM as Miosix
- * allocates them inside the heap.
- */
-
-/*
  * The main stack is used for interrupt handling by the kernel.
  *
  * *** Readme ***
@@ -49,7 +33,6 @@ _main_stack_size = 0x00001000;                     /* main stack = 4KBytes */
 _main_stack_top  = 0x20000000 + _main_stack_size;
 ASSERT(_main_stack_size   % 8 == 0, "MAIN stack size error");
 
-/* Heap starts at the end of the RAM */
 _end =      0x20000000;
 _heap_end = 0x200A0000;                            /* end of available ram  */
 
