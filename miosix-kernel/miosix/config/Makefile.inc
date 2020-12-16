@@ -49,7 +49,7 @@
 #OPT_BOARD := stm32f303vc_stm32f3discovery
 #OPT_BOARD := stm32f100c8_vaisala_rs41
 #OPT_BOARD := stm32l476rg_nucleo
-#OPT_BOARD := stm32l4r9zi_sensortile
+OPT_BOARD := stm32l4r9zi_sensortile
 
 ##
 ## Optimization flags, choose one.
@@ -57,8 +57,8 @@
 ## -O2 is recomended otherwise, as it provides a good balance between code
 ## size and speed
 ##
-#OPT_OPTIMIZATION := -O0
-OPT_OPTIMIZATION := -O2
+OPT_OPTIMIZATION := -O0
+#OPT_OPTIMIZATION := -O2
 #OPT_OPTIMIZATION := -O3
 #OPT_OPTIMIZATION := -Os
 
@@ -612,9 +612,9 @@ ifeq ($(OPT_BOARD),stm32l4r9zi_sensortile)
     ## Not defining any of these results in the internal 4MHz clock (MSI) to be used
     #CLOCK_FREQ := -DSYSCLK_FREQ_24MHz=24000000
     #CLOCK_FREQ := -DSYSCLK_FREQ_36MHz=36000000
-    #CLOCK_FREQ := -DSYSCLK_FREQ_48MHz=48000000
+    CLOCK_FREQ := -DSYSCLK_FREQ_48MHz=48000000
     #CLOCK_FREQ := -DSYSCLK_FREQ_56MHz=56000000
-    CLOCK_FREQ := -DSYSCLK_FREQ_80MHz=80000000
+    #CLOCK_FREQ := -DSYSCLK_FREQ_80MHz=80000000 -DRUN_WITH_HSE
 
     ## Same as above, but using 16MHz HSI as clock source
     #CLOCK_FREQ := -DSYSCLK_FREQ_24MHz=24000000 -DRUN_WITH_HSI
