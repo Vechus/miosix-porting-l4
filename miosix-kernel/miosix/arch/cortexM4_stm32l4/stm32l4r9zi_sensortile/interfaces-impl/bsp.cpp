@@ -80,45 +80,20 @@ void IRQbspInit()
     DefaultConsole::instance().IRQset(intrusive_ref_ptr<Device>(
         new STM32Serial(defaultSerial,defaultSerialSpeed,
         defaultSerialFlowctrl ? STM32Serial::RTSCTS : STM32Serial::NOFLOWCTRL)));
-    //greenLedOn();
-    //delayMs(1000);
-    //greenLedOff();
-    ledResetReasonBlink();
-}
 
-void ledResetReasonBlink() {
-    //3 orange blink -> Starting diagnostic
-    for(unsigned int i = 0; i < 3; i++) {
+    volatile int* pippo = (int*)malloc(10 * sizeof(int));
+
+    if(pippo == NULL){
         ledOn();
-        delayMs(300);
-        ledOff();
-    }
-
-    delayMs(2000);
-    for(unsigned int pos = RCC_CSR_FWRSTF_Pos; pos <= RCC_CSR_LPWRRSTF_Pos; pos++) {
-        if(RCC->CSR &  (1 << pos)){
-            //Green 2s blink = This flag is set to 1
-            greenLedOn();
-            delayMs(2000);
-            greenLedOff();
-        } else {
-            //Orange 2s blink = This flag is set to 0 
-            ledOn();
-            delayMs(2000);
-            ledOff();
-        }
         delayMs(1000);
-    } 
-
-    RCC_CSR->CSR |= RCC_CSR_RMVF
-    RCC_CSR->CSR &= ~RCC_CSR_RMVF
-    delayMs(2000);
-    for(unsigned int i = 0; i < 3; i++) {
+        ledOff();
+    } else {
         greenLedOn();
-        delayMs(300);
-        greenLedOn();
+        delayMs(500);
+        greenLedOff();
     }
 }
+
 
 void bspInit2()
 {
