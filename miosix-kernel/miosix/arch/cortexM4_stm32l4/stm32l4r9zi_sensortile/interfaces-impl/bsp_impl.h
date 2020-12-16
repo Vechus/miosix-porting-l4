@@ -71,6 +71,8 @@ inline void greenLedOff()
     _greenLed::low();
 }
 
+typedef Gpio<GPIOD_BASE, 4> _usart2_rts;
+
 
 /**
  * Polls the SD card sense GPIO.

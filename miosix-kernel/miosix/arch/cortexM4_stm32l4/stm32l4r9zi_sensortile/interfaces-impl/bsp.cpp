@@ -52,6 +52,8 @@ namespace miosix {
 //
 // Initialization
 //
+typedef Gpio<GPIOD_BASE,5>  u2tx;
+typedef Gpio<GPIOD_BASE,6>  u2rx;
 
 void IRQbspInit()
 {
@@ -72,14 +74,20 @@ void IRQbspInit()
     GPIOG->OSPEEDR=0xaaaaaaaa;
     GPIOH->OSPEEDR=0xaaaaaaaa;
     GPIOI->OSPEEDR=0xaaaaaaaa;
+    u2tx::mode(Mode::ALTERNATE);
+    u2rx::mode(Mode::ALTERNATE);
+    u2tx::alternateFunction(7);
+    u2rx::alternateFunction(7);
+    _usart2_rts::mode(Mode::OUTPUT);
     _led::mode(Mode::OUTPUT);
     _greenLed::mode(Mode::OUTPUT);
+    _usart2_rts::high();
     ledOn();
     delayMs(100);
     ledOff();
     DefaultConsole::instance().IRQset(intrusive_ref_ptr<Device>(
         new STM32Serial(defaultSerial,defaultSerialSpeed,
-        defaultSerialFlowctrl ? STM32Serial::RTSCTS : STM32Serial::NOFLOWCTRL)));
+        u2tx::getPin(), u2rx::getPin())));
 
 }
 

@@ -33,7 +33,7 @@ _main_stack_size = 0x00001000;                     /* main stack = 4KBytes */
 _main_stack_top  = 0x20000000 + _main_stack_size;
 ASSERT(_main_stack_size   % 8 == 0, "MAIN stack size error");
 
-_end =      0x20000000;
+/*_end =      0x20000000; */
 _heap_end = 0x200A0000;                            /* end of available ram  */
 
 /* identify the Entry Point  */
@@ -157,6 +157,6 @@ SECTIONS
     } > ram
     _bss_end = .;
 
-    /*_end = .;*/
-    /*PROVIDE(end = .);*/
+    _end = .;
+    PROVIDE(end = .);
 }
