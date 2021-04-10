@@ -644,10 +644,10 @@ static unsigned int dmaTransferCommonSetup(const unsigned char *buffer)
 {
     //Clear both SDIO and DMA interrupt flags
     SDIO->ICR=0x7ff; //Clear interrupts
-    DMA2->LIFCR=DMA_LIFCR_CTCIF3  |
-                DMA_LIFCR_CTEIF3  |
-                DMA_LIFCR_CDMEIF3 |
-                DMA_LIFCR_CFEIF3;
+    DMA2->IFCR=DMA_IFCR_CGIF4  |
+                DMA_IFCR_CTCIF4  |
+                DMA_IFCR_CHTIF4 |
+                DMA_IFCR_CTEIF4;
     
     transferError=false;
     dmaFlags=sdioFlags=0;
@@ -656,9 +656,9 @@ static unsigned int dmaTransferCommonSetup(const unsigned char *buffer)
     //Select DMA transfer size based on buffer alignment. Best performance
     //is achieved when the buffer is aligned on a 4 byte boundary
     switch(reinterpret_cast<unsigned int>(buffer) & 0x3)
-    {
-        case 0:  return DMA_SxCR_MSIZE_1; //DMA reads 32bit at a time
-        case 2:  return DMA_SxCR_MSIZE_0; //DMA reads 16bit at a time
+    {                    //10 //01 //0
+        case 0:  return DMA_CCR_MSIZE_1; //DMA reads 32bit at a time
+        case 2:  return DMA_CCR_MSIZE_0; //DMA reads 16bit at a time
         default: return 0;                //DMA reads  8bit at a time
     }
 }
@@ -691,31 +691,30 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
     //Data transfer is considered complete once the DMA transfer complete
     //interrupt occurs, that happens when the last data was written in the
     //buffer. Both SDIO and DMA error interrupts are active to catch errors
-    SDIO->MASK=SDIO_MASK_STBITERRIE | //Interrupt on start bit error
-               SDIO_MASK_RXOVERRIE  | //Interrupt on rx underrun
-               SDIO_MASK_TXUNDERRIE | //Interrupt on tx underrun
-               SDIO_MASK_DCRCFAILIE | //Interrupt on data CRC fail
-               SDIO_MASK_DTIMEOUTIE;  //Interrupt on data timeout
-	DMA2_Stream3->PAR=reinterpret_cast<unsigned int>(&SDIO->FIFO);
-	DMA2_Stream3->M0AR=reinterpret_cast<unsigned int>(buffer);
+    SDMMC->MASKR=//SDIO_MASK_STBITERRIE | //Interrupt on start bit error
+               SDMMC_MASKR_RXOVERRIE  | //Interrupt on rx underrun
+               SDMMC_MASKR_TXUNDERRIE | //Interrupt on tx underrun
+               SDMMC_MASKR_DCRCFAILIE | //Interrupt on data CRC fail
+               SDMMC_MASKR_DTIMEOUTIE;  //Interrupt on data timeout
+	DMA2_Channel4->CPAR=reinterpret_cast<unsigned int>(&SDIO->FIFO);
+	DMA2_Channel4->CMAR=reinterpret_cast<unsigned int>(buffer);
 	//Note: DMA2_Stream3->NDTR is don't care in peripheral flow control mode
-    DMA2_Stream3->FCR=DMA_SxFCR_FEIE    | //Interrupt on fifo error
-                      DMA_SxFCR_DMDIS   | //Fifo enabled
-                      DMA_SxFCR_FTH_0;    //Take action if fifo half full
-	DMA2_Stream3->CR=DMA_SxCR_CHSEL_2   | //Channel 4 (SDIO)
-                     DMA_SxCR_PBURST_0  | //4-beat bursts read from SDIO
-                     DMA_SxCR_PL_0      | //Medium priority DMA stream
+    //DMA2->FCR=//DMA_SxFCR_FEIE    | //Interrupt on fifo error
+                      //DMA_SxFCR_DMDIS   | //Fifo enabled
+                      //DMA_SxFCR_FTH_0;    //Take action if fifo half full
+	DMA2_Channel4->CCR =
+                    (//DMA_SxCR_CHSEL_2   | //Channel 4 (SDIO)
+                     //DMA_SxCR_PBURST_0  | //4-beat bursts read from SDIO
+                     DMA_CCR_PL_0       | //Medium priority DMA stream
                      memoryTransferSize | //RAM data size depends on alignment
-					 DMA_SxCR_PSIZE_1   | //Read 32bit at a time from SDIO
-				     DMA_SxCR_MINC      | //Increment RAM pointer
-			         0                  | //Peripheral to memory direction
-                     DMA_SxCR_PFCTRL    | //Peripheral is flow controller
-			         DMA_SxCR_TCIE      | //Interrupt on transfer complete
-                     DMA_SxCR_TEIE      | //Interrupt on transfer error
-                     DMA_SxCR_DMEIE     | //Interrupt on direct mode error
-			  	     DMA_SxCR_EN;         //Start the DMA
+					 DMA_CCR_PSIZE_1    | //Read 32bit at a time from SDIO
+				     DMA_CCR_MINC       | //Increment RAM pointer
+                     DMA_CCR_TEIE       | //Interrupt on transfer error
+                     DMA_CCR_TCIE       | //Interrupt on transfer complete
+			  	     DMA_CCR_EN         ) & //Start the DMA
+                     ~(DMA_CCR_DIR);     //Peripheral to memory direction 
     
-    SDIO->DLEN=nblk*512;
+    SDMMC->DLEN=nblk*512;
     if(waiting==0)
     {
         DBGERR("Premature wakeup\n");
@@ -725,7 +724,8 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
     if(cr.validateR1Response())
     {
         //Block size 512 bytes, block data xfer, from card to controller
-        SDIO->DCTRL=(9<<4) | SDIO_DCTRL_DMAEN | SDIO_DCTRL_DTDIR | SDIO_DCTRL_DTEN;
+        //DTMode set to 00 - Block Data Transfer (Not shown here)
+        SDMMC->DCTRL=(9<<4) | SDMMC_DCTRL_DTDIR | SDMMC_DCTRL_DTEN;
         FastInterruptDisableLock dLock;
         while(waiting)
         {
@@ -736,10 +736,10 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
             }
         }
     } else transferError=true;
-    DMA2_Stream3->CR=0;
-    while(DMA2_Stream3->CR & DMA_SxCR_EN) ; //DMA may take time to stop
-    SDIO->DCTRL=0; //Disable data path state machine
-    SDIO->MASK=0;
+    DMA2_Channel4->CCR=0;
+    while(DMA2_Channel4->CCR & DMA_CCR_EN) ; //DMA may take time to stop
+    SDMMC->DCTRL=0; //Disable data path state machine
+    SDMMC->MASK=0;
 
     // CMD12 is sent to end CMD18 (multiple block read), or to abort an
     // unfinished read in case of errors
@@ -913,8 +913,8 @@ static void initSDIOPeripheral()
 {
     {
         //Doing read-modify-write on RCC->APBENR2 and gpios, better be safe
-        FastInterruptDisableLock lock;
-        RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN //Ena
+        FastInterruptDisableLock lock;         
+        RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN  
                       | RCC_AHB1ENR_GPIODEN
                       | RCC_AHB1ENR_DMA2EN;
         RCC_SYNC();
@@ -945,7 +945,7 @@ static void initSDIOPeripheral()
     SDIO->CLKCR=0;
     SDIO->CMD=0;
     SDIO->DCTRL=0;
-    SDIO->ICR=0xc007ff;
+    SDIO->ICR=0x1fe007ff; //Interrupt  //0xc007ff
     SDIO->POWER=SDIO_POWER_PWRCTRL_1 | SDIO_POWER_PWRCTRL_0; //Power on state
     //This delay is particularly important: when setting the POWER register a
     //glitch on the CMD pin happens. This glitch has a fast fall time and a slow
@@ -954,7 +954,7 @@ static void initSDIOPeripheral()
     //interprets it as a start bit. No, setting POWER to powerup does not
     //eliminate the glitch.
     delayUs(10);
-    ClockController::setLowSpeedClock();
+    ClockController::setLowSpeedClock(); 
 }
 
 /**
