@@ -74,6 +74,7 @@ void IRQbspInit()
     GPIOG->OSPEEDR=0xaaaaaaaa;
     GPIOH->OSPEEDR=0xaaaaaaaa;
     GPIOI->OSPEEDR=0xaaaaaaaa;
+    // On sensortile board we bind USART2_RTS, USART2_TX and USART2_RX respectively to pins D4, D5, D6 (we use STLINK V3)
     u2tx::mode(Mode::ALTERNATE);
     u2rx::mode(Mode::ALTERNATE);
     u2tx::alternateFunction(7);
