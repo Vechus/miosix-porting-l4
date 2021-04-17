@@ -42,7 +42,7 @@ void __attribute__((naked)) DMA2_Channel4_IRQHandler()
 void __attribute__((used)) DMA2channel4irqImpl()
 {
     dmaFlags=DMA2->ISR; //Check
-    if(dmaFlags & DMA_LISR_TEIF4)
+    if(dmaFlags & DMA_ISR_TEIF4)
         transferError=true;
     
     DMA2->IFCR=DMA_IFCR_CGIF4; //Clear all interrupts
@@ -68,12 +68,12 @@ void __attribute__((naked)) SDMMC1_IRQHandler()
  */
 void __attribute__((used)) SDMMCirqImpl()
 {
-    sdioFlags=SDMMC->STA;
+    sdioFlags=SDMMC1->STA;
     if(sdioFlags & (SDMMC_STA_RXOVERR  |
                     SDMMC_STA_TXUNDERR | SDMMC_STA_DTIMEOUT | SDMMC_STA_DCRCFAIL))
         transferError=true;
     
-    SDMMC->ICR=0x7ff;//Clear flags
+    SDMMC1->ICR=0x7ff;//Clear flags
     
     if(!waiting) return;
     waiting->IRQwakeup();
@@ -152,7 +152,7 @@ public:
      * \param result result of command
      */
     CmdResult(unsigned char cmd, Error error): cmd(cmd), error(error),
-            response(SDMMC->RESP1) {}
+            response(SDMMC1->RESP1) {}
 
     /**
      * \internal
@@ -393,44 +393,44 @@ CmdResult Command::send(CommandType cmd, unsigned int arg)
     if(cc!=CMD0) command |= SDMMC_CMD_WAITRESP_0; //CMD0 has no response
     if(cc==CMD2) command |= SDMMC_CMD_WAITRESP_1; //CMD2 has long response
     if(cc==CMD9) command |= SDMMC_CMD_WAITRESP_1; //CMD9 has long response
-    SDMMC->ARG = arg;
-    SDMMC->CMD = command;
+    SDMMC1->ARG = arg;
+    SDMMC1->CMD = command;
 
     //CMD0 has no response, so wait until it is sent
     if(cc==CMD0)
     {
         for(int i=0;i<500;i++)
         {
-            if(SDMMC->STA & SDMMC_STA_CMDSENT)
+            if(SDMMC1->STA & SDMMC_STA_CMDSENT)
             {
-                SDMMC->ICR=0x7ff;//Clear flags
+                SDMMC1->ICR=0x7ff;//Clear flags
                 return CmdResult(cc,CmdResult::Ok);
             }
             delayUs(1);
         }
-        SDMMC->ICR = 0x7ff;//Clear flags
+        SDMMC1->ICR = 0x7ff;//Clear flags
         return CmdResult(cc,CmdResult::Timeout);
     }
 
     //Command is not CMD0, so wait a reply
     for(int i=0;i<500;i++)
     {
-        unsigned int status=SDMMC->STA;
+        unsigned int status=SDMMC1->STA;
         if(status & SDMMC_STA_CMDREND)
         {
-            SDMMC->ICR=0x7ff;//Clear flags
-            if(SDMMC->RESPCMD==cc) return CmdResult(cc,CmdResult::Ok);
+            SDMMC1->ICR=0x7ff;//Clear flags
+            if(SDMMC1->RESPCMD==cc) return CmdResult(cc,CmdResult::Ok);
             else return CmdResult(cc,CmdResult::RespNotMatch);
         }
         if(status & SDMMC_STA_CCRCFAIL)
         {
-            SDMMC->ICR=SDMMC_ICR_CCRCFAILC;
+            SDMMC1->ICR=SDMMC_ICR_CCRCFAILC;
             return CmdResult(cc,CmdResult::CRCFail);
         }
         if(status & SDMMC_STA_CTIMEOUT) break;
         delayUs(1);
     }
-    SDMMC->ICR=SDMMC_ICR_CTIMEOUTC;
+    SDMMC1->ICR=SDMMC_ICR_CTIMEOUTC;
     return CmdResult(cc,CmdResult::Timeout);
 }
 
@@ -462,8 +462,8 @@ public:
         // No hardware flow control, SDIO_CK generated on rising edge, 1bit bus
         // width, no clock bypass, no powersave.
         // Set low clock speed 400KHz
-        SDMMC->CLKCR=CLOCK_400KHz;
-        SDMMC->DTIMER=240000; //Timeout 600ms expressed in SD_CK cycles
+        SDMMC1->CLKCR=CLOCK_400KHz;
+        SDMMC1->DTIMER=240000; //Timeout 600ms expressed in SD_CK cycles
     }
 
     /**
@@ -581,7 +581,7 @@ bool ClockController::reduceClockSpeed()
     if(clockReductionAvailable==0) return false;
     clockReductionAvailable--;
 
-    unsigned int currentClkcr=SDMMC->CLKCR & 0x3ff;
+    unsigned int currentClkcr=SDMMC1->CLKCR & 0x3ff;
     if(currentClkcr==CLOCK_400KHz) return false; //No lower than this value
 
     //If the value of clockcr is low, increasing it by one is enough since
@@ -595,7 +595,7 @@ bool ClockController::reduceClockSpeed()
 
 void ClockController::setClockSpeed(unsigned int clkdiv)
 {
-    SDMMC->CLKCR = clkdiv | CLKCR_FLAGS;
+    SDMMC1->CLKCR = clkdiv | CLKCR_FLAGS;
     //Timeout 600ms expressed in SD_CK cycles
     SDMMC -> DTIMER = (6*SDIOCLK)/((clkdiv == 0 ? 1 : 2 * clkdiv)*10);
 }
@@ -653,7 +653,7 @@ static void displayBlockTransferError()
 static unsigned int dmaTransferCommonSetup(const unsigned char *buffer)
 {
     //Clear both SDIO and DMA interrupt flags
-    SDMMC->ICR=0x7ff; //Clear interrupts
+    SDMMC1->ICR=0x7ff; //Clear interrupts
     DMA2->IFCR=DMA_IFCR_CGIF4  |
                 DMA_IFCR_CTCIF4  |
                 DMA_IFCR_CHTIF4 |
@@ -701,13 +701,13 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
     //Data transfer is considered complete once the DMA transfer complete
     //interrupt occurs, that happens when the last data was written in the
     //buffer. Both SDIO and DMA error interrupts are active to catch errors
-    SDMMC->MASKR= SDMMC_MASK_DATAENDIE  |
+    SDMMC1->MASKR= SDMMC_MASK_DATAENDIE  |
                 //SDIO_MASK_STBITERRIE | //Interrupt on start bit error
                SDMMC_MASK_RXOVERRIE  | //Interrupt on rx underrun
                SDMMC_MASK_TXUNDERRIE | //Interrupt on tx underrun
                SDMMC_MASK_DCRCFAILIE | //Interrupt on data CRC fail
                SDMMC_MASK_DTIMEOUTIE;  //Interrupt on data timeout
-	DMA2_Channel4->CPAR=reinterpret_cast<unsigned int>(&SDMMC->FIFO);
+	DMA2_Channel4->CPAR=reinterpret_cast<unsigned int>(&SDMMC1->FIFO);
 	DMA2_Channel4->CMAR=reinterpret_cast<unsigned int>(buffer);
 	//Note: DMA2_Stream3->NDTR is don't care in peripheral flow control mode
     //DMA2->FCR=//DMA_SxFCR_FEIE    | //Interrupt on fifo error
@@ -725,7 +725,7 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
 			  	     DMA_CCR_EN         ) & //Start the DMA
                      ~(DMA_CCR_DIR);     //Peripheral to memory direction 
     
-    SDMMC->DLEN=nblk*512;
+    SDMMC1->DLEN=nblk*512;
     if(waiting==0)
     {
         DBGERR("Premature wakeup\n");
@@ -736,7 +736,7 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
     {
         //Block size 512 bytes, block data xfer, from card to controller
         //DTMode set to 00 - Block Data Transfer (Not shown here)
-        SDMMC->DCTRL=(9<<4) | SDMMC_DCTRL_DTDIR | SDMMC_DCTRL_DTEN;
+        SDMMC1->DCTRL=(9<<4) | SDMMC_DCTRL_DTDIR | SDMMC_DCTRL_DTEN;
         FastInterruptDisableLock dLock;
         while(waiting)
         {
@@ -749,8 +749,8 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
     } else transferError=true;
     DMA2_Channel4->CCR=0;
     while(DMA2_Channel4->CCR & DMA_CCR_EN) ; //DMA may take time to stop
-    SDMMC->DCTRL=0; //Disable data path state machine
-    SDMMC->MASK=0;
+    SDMMC1->DCTRL=0; //Disable data path state machine
+    SDMMC1->MASK=0;
 
     // CMD12 is sent to end CMD18 (multiple block read), or to abort an
     // unfinished read in case of errors
@@ -804,13 +804,13 @@ static bool multipleBlockWrite(const unsigned char *buffer, unsigned int nblk,
     //Data transfer is considered complete once the SDIO transfer complete
     //interrupt occurs, that happens when the last data was written to the SDIO
     //Both SDIO and DMA error interrupts are active to catch errors
-    SDMMC->MASKR=SDMMC_MASK_DATAENDIE  | //Interrupt on data end
+    SDMMC1->MASKR=SDMMC_MASK_DATAENDIE  | //Interrupt on data end
                //SDIO_MASK_STBITERRIE | //Interrupt on start bit error
                SDMMC_MASK_RXOVERRIE  | //Interrupt on rx underrun
                SDMMC_MASK_TXUNDERRIE | //Interrupt on tx underrun
                SDMMC_MASK_DCRCFAILIE | //Interrupt on data CRC fail
                SDMMC_MASK_DTIMEOUTIE;  //Interrupt on data timeout
-	DMA2_Channel4->CPAR=reinterpret_cast<unsigned int>(&SDMMC->FIFO);
+	DMA2_Channel4->CPAR=reinterpret_cast<unsigned int>(&SDMMC1->FIFO);
 	DMA2_Channel4->CMAR=reinterpret_cast<unsigned int>(buffer);
 	//Note: DMA2_Stream3->NDTR is don't care in peripheral flow control mode
     //Quirk: not enabling DMA_SxFCR_FEIE because the SDIO seems to generate
@@ -831,7 +831,7 @@ static bool multipleBlockWrite(const unsigned char *buffer, unsigned int nblk,
                      //DMA_SxCR_DMEIE     | //Interrupt on direct mode error
 			  	     DMA_CCR_EN;         //Start the DMA
     
-    SDMMC->DLEN=nblk*512;
+    SDMMC1->DLEN=nblk*512;
     if(waiting==0)
     {
         DBGERR("Premature wakeup\n");
@@ -841,7 +841,7 @@ static bool multipleBlockWrite(const unsigned char *buffer, unsigned int nblk,
     if(cr.validateR1Response())
     {
         //Block size 512 bytes, block data xfer, from card to controller
-        SDMMC->DCTRL=(9<<4) | SDMMC_DCTRL_DTEN & ~(SDMMC_DCTRL_DTDIR);
+        SDMMC1->DCTRL=(9<<4) | SDMMC_DCTRL_DTEN & ~(SDMMC_DCTRL_DTDIR);
         FastInterruptDisableLock dLock;
         while(waiting)
         {
@@ -854,8 +854,8 @@ static bool multipleBlockWrite(const unsigned char *buffer, unsigned int nblk,
     } else transferError=true;
     DMA2_Channel4->CCR=0;
     while(DMA2_Channel4->CR & DMA_CCR_EN) ; //DMA may take time to stop
-    SDMMC->DCTRL=0; //Disable data path state machine
-    SDMMC->MASK=0;
+    SDMMC1->DCTRL=0; //Disable data path state machine
+    SDMMC1->MASK=0;
 
     // CMD12 is sent to end CMD25 (multiple block write), or to abort an
     // unfinished write in case of errors
@@ -952,13 +952,13 @@ static void initSDIOPeripheral()
     NVIC_SetPriority(SDMMC1_IRQn,15);//Low priority for SDIO
     NVIC_EnableIRQ(SDMMC1_IRQn);
     
-    SDMMC->POWER=0; //Power off state
+    SDMMC1->POWER=0; //Power off state
     delayUs(1);
-    SDMMC->CLKCR=0;
-    SDMMC->CMD=0;
-    SDMMC->DCTRL=0;
-    SDMMC->ICR=0x1fe007ff; //Interrupt  //0xc007ff
-    SDMMC->POWER=SDIO_POWER_PWRCTRL_1 | SDIO_POWER_PWRCTRL_0; //Power on state
+    SDMMC1->CLKCR=0;
+    SDMMC1->CMD=0;
+    SDMMC1->DCTRL=0;
+    SDMMC1->ICR=0x1fe007ff; //Interrupt  //0xc007ff
+    SDMMC1->POWER=SDMMC_POWER_PWRCTRL_1 | SDMMC_POWER_PWRCTRL_0; //Power on state
     //This delay is particularly important: when setting the POWER register a
     //glitch on the CMD pin happens. This glitch has a fast fall time and a slow
     //rise time resembling an RC charge with a ~6us rise time. If the clock is
