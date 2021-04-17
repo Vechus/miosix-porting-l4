@@ -841,7 +841,7 @@ static bool multipleBlockWrite(const unsigned char *buffer, unsigned int nblk,
     if(cr.validateR1Response())
     {
         //Block size 512 bytes, block data xfer, from card to controller
-        SDMMC1->DCTRL=(9<<4) | SDMMC_DCTRL_DTEN & ~(SDMMC_DCTRL_DTDIR);
+        SDMMC1->DCTRL= ((9<<4) | SDMMC_DCTRL_DTEN) & ~(SDMMC_DCTRL_DTDIR);
         FastInterruptDisableLock dLock;
         while(waiting)
         {
@@ -853,7 +853,7 @@ static bool multipleBlockWrite(const unsigned char *buffer, unsigned int nblk,
         }
     } else transferError=true;
     DMA2_Channel4->CCR=0;
-    while(DMA2_Channel4->CR & DMA_CCR_EN) ; //DMA may take time to stop
+    while(DMA2_Channel4->CCR & DMA_CCR_EN) ; //DMA may take time to stop
     SDMMC1->DCTRL=0; //Disable data path state machine
     SDMMC1->MASK=0;
 
