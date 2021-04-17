@@ -2533,6 +2533,8 @@ else ifeq ($(ARCH),cortexM4_stm32l4)
         CFLAGS_BASE   += -D_BOARD_STM32L4R9ZI_SENSORTILE
         CXXFLAGS_BASE += -D_BOARD_STM32L4R9ZI_SENSORTILE
 
+        ARCH_SRC += arch/common/drivers/sd_stm32l4.cpp
+
         ## Select programmer command line
         ## This is the program that is invoked when the user types
         ## 'make program'
