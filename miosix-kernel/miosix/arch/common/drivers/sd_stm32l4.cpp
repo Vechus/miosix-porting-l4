@@ -597,7 +597,7 @@ void ClockController::setClockSpeed(unsigned int clkdiv)
 {
     SDMMC1->CLKCR = clkdiv | CLKCR_FLAGS;
     //Timeout 600ms expressed in SD_CK cycles
-    SDMMC -> DTIMER = (6*SDIOCLK)/((clkdiv == 0 ? 1 : 2 * clkdiv)*10);
+    SDMMC1-> DTIMER = (6*SDIOCLK)/((clkdiv == 0 ? 1 : 2 * clkdiv)*10);
 }
 
 unsigned char ClockController::clockReductionAvailable = false;
@@ -701,7 +701,7 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
     //Data transfer is considered complete once the DMA transfer complete
     //interrupt occurs, that happens when the last data was written in the
     //buffer. Both SDIO and DMA error interrupts are active to catch errors
-    SDMMC1->MASKR= SDMMC_MASK_DATAENDIE  |
+    SDMMC1->MASK= SDMMC_MASK_DATAENDIE  |
                 //SDIO_MASK_STBITERRIE | //Interrupt on start bit error
                SDMMC_MASK_RXOVERRIE  | //Interrupt on rx underrun
                SDMMC_MASK_TXUNDERRIE | //Interrupt on tx underrun
@@ -804,7 +804,7 @@ static bool multipleBlockWrite(const unsigned char *buffer, unsigned int nblk,
     //Data transfer is considered complete once the SDIO transfer complete
     //interrupt occurs, that happens when the last data was written to the SDIO
     //Both SDIO and DMA error interrupts are active to catch errors
-    SDMMC1->MASKR=SDMMC_MASK_DATAENDIE  | //Interrupt on data end
+    SDMMC1->MASK=SDMMC_MASK_DATAENDIE  | //Interrupt on data end
                //SDIO_MASK_STBITERRIE | //Interrupt on start bit error
                SDMMC_MASK_RXOVERRIE  | //Interrupt on rx underrun
                SDMMC_MASK_TXUNDERRIE | //Interrupt on tx underrun
