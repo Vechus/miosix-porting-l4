@@ -4433,7 +4433,7 @@ static void fs_test_1()
                     break;
                 } //else fallthrough
             default:
-                iprintf("mkdir returned %d\n",result);
+                iprintf("mkdir returned %d\n",errno);
                 fail("Directory::mkdir()");
     }
     //Test concurrent file write access
