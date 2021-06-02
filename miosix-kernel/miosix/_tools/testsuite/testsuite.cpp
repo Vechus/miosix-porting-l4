@@ -4421,7 +4421,15 @@ static void fs_test_1()
     test_name("C standard library file functions + mkdir()");
     iprintf("Please wait (long test)\n");
     //Test mkdir (if possible)
-    int result=mkdir("/sd/testdir",0);
+    int result=chdir("sd");
+    switch(result)
+    {
+            case 0: break;
+            default:
+                iprintf("chdir returned %d\n",errno);
+                fail("Directory::mkdir()");
+    }
+    result=mkdir("testdir",0);
     switch(result)
     {
             case 0: break;
