@@ -95,7 +95,9 @@ void IRQbspInit()
 
 void bspInit2()
 {
-
+    #ifdef WITH_FILESYSTEM
+    basicFilesystemSetup(SDIODriver::instance());
+    #endif //WITH_FILESYSTEM
 }
 
 //
