@@ -930,6 +930,7 @@ static void initSDIOPeripheral()
                       | RCC_AHB2ENR_SDMMC1EN;
 
         RCC->AHB1ENR |= RCC_AHB1ENR_DMA2EN;
+        RCC->CCIPR |= RCC_CCIPR_CLK48SEL_1;
         //RCC_SYNC();
         //RCC_SYNC();
         sdD0::mode(Mode::ALTERNATE);
