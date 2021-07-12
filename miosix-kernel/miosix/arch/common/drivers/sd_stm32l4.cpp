@@ -11,6 +11,10 @@
 #include <cstring>
 #include <errno.h>
 
+// TODO: DEBUG ONLY
+#include "e20/e20.h"
+#include <thread>
+
 //Note: enabling debugging might cause deadlock when using sleep() or reboot()
 //The bug won't be fixed because debugging is only useful for driver development
 ///\internal Debug macro, for normal conditions
@@ -20,6 +24,20 @@
 #define DBGERR iprintf
 //#define DBGERR(x,...) do {} while(0)
 
+void __attribute__((naked)) SDMMC1_IRQHandler()
+{
+    saveContext();
+    asm volatile("bl _ZN6miosix12SDMMCirqImplEv");
+    restoreContext();
+}
+
+void __attribute__((naked)) DMA2_Channel4_IRQHandler()
+{
+    saveContext();
+    asm volatile("bl _ZN6miosix19DMA2channel4irqImplEv");
+    restoreContext();
+}
+
 namespace miosix {
 
 static volatile bool transferError; ///< \internal DMA or SDIO transfer error
@@ -27,17 +45,12 @@ static Thread *waiting;             ///< \internal Thread waiting for transfer
 static unsigned int dmaFlags;       ///< \internal DMA status flags
 static unsigned int sdioFlags;      ///< \internal SDIO status flags
 
-
-void __attribute__((naked)) DMA2_Channel4_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z19DMA2channel4irqImplv");
-    restoreContext();
-}
+// TODO: DEBUG ONLY
+FixedEventQueue<100,12> queue;
 
 /**
  * \internal
- * DMA2 Stream3 interrupt handler actual implementation
+ * DMA2 Channel 4 interrupt handler actual implementation
  */
 void __attribute__((used)) DMA2channel4irqImpl()
 {
@@ -54,13 +67,6 @@ void __attribute__((used)) DMA2channel4irqImpl()
     waiting=0;
 }
 
-void __attribute__((naked)) SDMMC1_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z12SDMMCirqImplv");
-    restoreContext();
-}
-
 
 /**
  * \internal
@@ -74,6 +80,11 @@ void __attribute__((used)) SDMMCirqImpl()
         transferError=true;
     
     SDMMC1->ICR=0x7ff;//Clear flags
+
+    // TODO: DEBUG ONLY
+    queue.IRQpost([=]() {
+        iprintf("== 0x%x ==\n", sdioFlags);
+    });
     
     if(!waiting) return;
     waiting->IRQwakeup();
@@ -540,6 +551,11 @@ private:
 
 void ClockController::calibrateClockSpeed(SDIODriver *sdio)
 {
+    //TODO: DEBUG ONLY
+    DBG("Automatic speed calibration hacked!\n");
+    setClockSpeed(10);
+    return;
+
     //During calibration we call readBlock() which will call reduceClockSpeed()
     //so not to invalidate calibration clock reduction must not be available
     clockReductionAvailable=0;
@@ -960,6 +976,8 @@ static void initSDIOPeripheral()
     SDMMC1->DCTRL=0;
     SDMMC1->ICR=0x1fe007ff; //Interrupt  //0xc007ff
     SDMMC1->POWER=SDMMC_POWER_PWRCTRL_1 | SDMMC_POWER_PWRCTRL_0; //Power on state
+    DBG("\nIDMACTRL: 0x%x\n", SDMMC1->IDMACTRL);
+    
     //This delay is particularly important: when setting the POWER register a
     //glitch on the CMD pin happens. This glitch has a fast fall time and a slow
     //rise time resembling an RC charge with a ~6us rise time. If the clock is
@@ -1133,6 +1151,13 @@ int SDIODriver::ioctl(int cmd, void* arg)
 
 SDIODriver::SDIODriver() : Device(Device::BLOCK)
 {
+    // TODO: DEBUG ONLY
+    std::thread t([](){
+        queue.run();
+    });
+
+    t.detach();
+
     initSDIOPeripheral();
 
     // This is more important than it seems, since CMD55 requires the card's RCA
@@ -1196,6 +1221,7 @@ SDIODriver::SDIODriver() : Device(Device::BLOCK)
     // Now that card is initialized, perform self calibration of maximum
     // possible read/write speed. This as a side effect enables 4bit bus width.
     ClockController::calibrateClockSpeed(this);
+
 
     DBG("SDIO init: Success\n");
 
