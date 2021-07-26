@@ -45,6 +45,9 @@ static Thread *waiting;             ///< \internal Thread waiting for transfer
 static unsigned int dmaFlags;       ///< \internal DMA status flags
 static unsigned int sdioFlags;      ///< \internal SDIO status flags
 
+//TODO DEBUG ONLY
+static unsigned int icrFlags;
+
 // TODO: DEBUG ONLY
 FixedEventQueue<100,12> queue;
 
@@ -59,6 +62,12 @@ void __attribute__((used)) DMA2channel4irqImpl()
         transferError=true;
     
     DMA2->IFCR=DMA_IFCR_CGIF4; //Clear all interrupts
+
+    //TODO: DEBUG ONLY
+    queue.IRQpost([=]() {
+        iprintf("== DMA Received ==\n");
+    });
+    
     
     if(!waiting) return;
     waiting->IRQwakeup();
@@ -75,16 +84,19 @@ void __attribute__((used)) DMA2channel4irqImpl()
 void __attribute__((used)) SDMMCirqImpl()
 {
     sdioFlags=SDMMC1->STA;
+
     if(sdioFlags & (SDMMC_STA_RXOVERR  |
                     SDMMC_STA_TXUNDERR | SDMMC_STA_DTIMEOUT | SDMMC_STA_DCRCFAIL))
-        transferError=true;
-    
-    SDMMC1->ICR=0x7ff;//Clear flags
 
-    // TODO: DEBUG ONLY
+        transferError=true;
+
+    //TODO: DEBUG ONLY
     queue.IRQpost([=]() {
-        iprintf("== 0x%x ==\n", sdioFlags);
+        iprintf("FLAGS == 0x%x ==\n", sdioFlags);
     });
+
+    //Changed: Old value was 0x7ff
+    SDMMC1->ICR=0x1fe00fff;//Clear flags
     
     if(!waiting) return;
     waiting->IRQwakeup();
@@ -273,6 +285,8 @@ bool CmdResult::validateR1Response()
     if(response & (1<<16)) DBGERR("CSD overwrite\n");
     if(response & (1<<15)) DBGERR("WP ERASE skip\n");
     if(response & (1<<3)) DBGERR("AKE_SEQ error\n");
+    //TODO: DEBYG ONLY
+    DBGERR(">- RESPONSE: 0x%x\n", response);
     return false;
 }
 
@@ -414,12 +428,12 @@ CmdResult Command::send(CommandType cmd, unsigned int arg)
         {
             if(SDMMC1->STA & SDMMC_STA_CMDSENT)
             {
-                SDMMC1->ICR=0x7ff;//Clear flags
+                SDMMC1->ICR=0x1fe00fff;//Clear flags
                 return CmdResult(cc,CmdResult::Ok);
             }
             delayUs(1);
         }
-        SDMMC1->ICR = 0x7ff;//Clear flags
+        SDMMC1->ICR = 0x1fe00fff;//Clear flags
         return CmdResult(cc,CmdResult::Timeout);
     }
 
@@ -429,7 +443,7 @@ CmdResult Command::send(CommandType cmd, unsigned int arg)
         unsigned int status=SDMMC1->STA;
         if(status & SDMMC_STA_CMDREND)
         {
-            SDMMC1->ICR=0x7ff;//Clear flags
+            SDMMC1->ICR=0x1fe00fff;//Clear flags
             if(SDMMC1->RESPCMD==cc) return CmdResult(cc,CmdResult::Ok);
             else return CmdResult(cc,CmdResult::RespNotMatch);
         }
@@ -669,7 +683,7 @@ static void displayBlockTransferError()
 static unsigned int dmaTransferCommonSetup(const unsigned char *buffer)
 {
     //Clear both SDIO and DMA interrupt flags
-    SDMMC1->ICR=0x7ff; //Clear interrupts
+    SDMMC1->ICR=0x1fe00fff; //Clear interrupts
     DMA2->IFCR=DMA_IFCR_CGIF4  |
                 DMA_IFCR_CTCIF4  |
                 DMA_IFCR_CHTIF4 |
@@ -723,12 +737,19 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
                SDMMC_MASK_TXUNDERRIE | //Interrupt on tx underrun
                SDMMC_MASK_DCRCFAILIE | //Interrupt on data CRC fail
                SDMMC_MASK_DTIMEOUTIE;  //Interrupt on data timeout
-	DMA2_Channel4->CPAR=reinterpret_cast<unsigned int>(&SDMMC1->FIFO);
+	DMA2_Channel4->CPAR=reinterpret_cast<unsigned int>(&(SDMMC1->FIFO));
 	DMA2_Channel4->CMAR=reinterpret_cast<unsigned int>(buffer);
 	//Note: DMA2_Stream3->NDTR is don't care in peripheral flow control mode
     //DMA2->FCR=//DMA_SxFCR_FEIE    | //Interrupt on fifo error
                       //DMA_SxFCR_DMDIS   | //Fifo enabled
-                      //DMA_SxFCR_FTH_0;    //Take action if fifo half full
+                      //DMA_SxFCR_FTH_0;    //Take action if fifo half full 
+
+    /*NUumber of DMA transfer to do, this depends on the transfer size and on the 
+    number of blocks to read*/
+    /* 1 block = 512 bytes (<< 9) divided by the transfer size (8, 16, 32 bytes)*/
+    /* nblk * 512 / (2^memoryTransferSize) */
+    unsigned int numberOfTransfers =  nblk << (9 - memoryTransferSize);
+    DMA2_Channel4->CNDTR = numberOfTransfers;
 	DMA2_Channel4->CCR =
                     (//DMA_SxCR_CHSEL_2   | //Channel 4 (SDIO)
                      //DMA_SxCR_PBURST_0  | //4-beat bursts read from SDIO
@@ -753,6 +774,7 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
         //Block size 512 bytes, block data xfer, from card to controller
         //DTMode set to 00 - Block Data Transfer (Not shown here)
         SDMMC1->DCTRL=(9<<4) | SDMMC_DCTRL_DTDIR | SDMMC_DCTRL_DTEN;
+        DBG("READ STARTED! WAITING FOR INTERRUPT...\n");
         FastInterruptDisableLock dLock;
         while(waiting)
         {
@@ -762,11 +784,17 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
                 Thread::yield();
             }
         }
-    } else transferError=true;
+
+    } else {
+        transferError=true;
+        DBG("TRANSFER ERROR\n");
+    }
     DMA2_Channel4->CCR=0;
     while(DMA2_Channel4->CCR & DMA_CCR_EN) ; //DMA may take time to stop
     SDMMC1->DCTRL=0; //Disable data path state machine
     SDMMC1->MASK=0;
+
+    DBGERR("TRANSFER ERROR: %d\n", transferError);
 
     // CMD12 is sent to end CMD18 (multiple block read), or to abort an
     // unfinished read in case of errors
