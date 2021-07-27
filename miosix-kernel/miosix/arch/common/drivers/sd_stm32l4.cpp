@@ -645,17 +645,15 @@ static void displayBlockTransferError()
 /**
  * \internal
  * Contains initial common code between multipleBlockRead and multipleBlockWrite
- * to clear interrupt and error flags, set the waiting thread and compute the
- * memory transfer size based on buffer alignment
- * \return the best DMA transfer size for a given buffer alignment 
+ * to clear interrupt and error flags, set the waiting thread.
  */
 static void dmaTransferCommonSetup(const unsigned char *buffer)
 {
     //Clear both SDIO and DMA interrupt flags
     SDMMC1->ICR=0x1fe00fff; //Clear interrupts
 
-    SDMMC1->IDMACTRL = SDMMC_IDMA_IDMAEN & ~(SDMMC_IDMA_IDMABMODE);
-    SDMMC1->IDMABASE0 = reinterpret_cast<unsigned int>(buffer);
+    SDMMC1->IDMACTRL = SDMMC_IDMA_IDMAEN & ~(SDMMC_IDMA_IDMABMODE); //Enable dma without double buffer
+    SDMMC1->IDMABASE0 = reinterpret_cast<unsigned int>(buffer); //Set buffer base address (where to read/write)
     
     transferError=false;
     dmaFlags=sdioFlags=0;
@@ -691,13 +689,12 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
     //interrupt occurs, that happens when the last data was written in the
     //buffer. Both SDIO and DMA error interrupts are active to catch errors
     SDMMC1->MASK= SDMMC_MASK_DATAENDIE  |
-                //SDIO_MASK_STBITERRIE | //Interrupt on start bit error
                SDMMC_MASK_RXOVERRIE  | //Interrupt on rx underrun
                SDMMC_MASK_TXUNDERRIE | //Interrupt on tx underrun
                SDMMC_MASK_DCRCFAILIE | //Interrupt on data CRC fail
                SDMMC_MASK_DTIMEOUTIE | //Interrupt on data timeout
-               SDMMC_MASK_IDMABTCIE  |
-               SDMMC_MASK_DABORTIE;
+               SDMMC_MASK_IDMABTCIE  | //Interrupt on IDMA events
+               SDMMC_MASK_DABORTIE;    //Interrupt on aborted
     SDMMC1->DLEN=nblk*512;
 
     if(waiting==0)
@@ -784,12 +781,11 @@ static bool multipleBlockWrite(const unsigned char *buffer, unsigned int nblk,
     //interrupt occurs, that happens when the last data was written to the SDIO
     //Both SDIO and DMA error interrupts are active to catch errors
     SDMMC1->MASK=SDMMC_MASK_DATAENDIE  | //Interrupt on data end
-               //SDIO_MASK_STBITERRIE | //Interrupt on start bit error
                SDMMC_MASK_RXOVERRIE  | //Interrupt on rx underrun
                SDMMC_MASK_TXUNDERRIE | //Interrupt on tx underrun
                SDMMC_MASK_DCRCFAILIE | //Interrupt on data CRC fail
                SDMMC_MASK_DTIMEOUTIE | //Interrupt on data timeout
-               SDMMC_MASK_IDMABTCIE  |
+               SDMMC_MASK_IDMABTCIE  | //Interrupt on IDMA events
                SDMMC_MASK_DABORTIE;
     SDMMC1->DLEN=nblk*512;
     if(waiting==0)
