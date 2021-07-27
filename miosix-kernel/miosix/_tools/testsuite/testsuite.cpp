@@ -4559,6 +4559,7 @@ static void fs_test_1()
     if(fclose(f)!=0) fail("Can't close deleteme.txt");
     remove("/sd/testdir/deleteme.txt");
     if((f=fopen("/sd/testdir/deleteme.txt","r"))!=NULL) fail("remove() error");
+    if(chdir("/")) fail("chdir"); //Reset current working directory
     pass();
 }
 
@@ -4711,7 +4712,7 @@ unsigned int checkInodes(const char *dir, unsigned int curInode,
         if(de==NULL) break;
         
         struct stat st;
-        if(stat(de->d_name,&st)) fail("stat");
+        if(stat(de->d_name,&st)) fail("stat2");
         
         if(de->d_ino!=st.st_ino) fail("inode mismatch");
         
@@ -4782,7 +4783,7 @@ static void fs_test_4()
         struct stat st;
         if(strcmp(de->d_name,"..")) //Don't stat ".."
         {
-            if(stat(de->d_name,&st)) fail("stat");
+            if(stat(de->d_name,&st)) fail("stat1");
             if((de->d_type==DT_DIR) ^ (S_ISDIR(st.st_mode)))
                 fail("dir mismatch");
         }
