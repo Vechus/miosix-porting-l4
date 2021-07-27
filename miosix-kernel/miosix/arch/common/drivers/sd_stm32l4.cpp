@@ -18,11 +18,11 @@
 //Note: enabling debugging might cause deadlock when using sleep() or reboot()
 //The bug won't be fixed because debugging is only useful for driver development
 ///\internal Debug macro, for normal conditions
-#define DBG iprintf
-//#define DBG(x,...) do {} while(0)
+//#define DBG iprintf
+#define DBG(x,...) do {} while(0)
 ///\internal Debug macro, for errors only
-#define DBGERR iprintf
-//#define DBGERR(x,...) do {} while(0)
+//#define DBGERR iprintf
+#define DBGERR(x,...) do {} while(0)
 
 void __attribute__((naked)) SDMMC1_IRQHandler()
 {
@@ -31,12 +31,7 @@ void __attribute__((naked)) SDMMC1_IRQHandler()
     restoreContext();
 }
 
-void __attribute__((naked)) DMA2_Channel4_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _ZN6miosix19DMA2channel4irqImplEv");
-    restoreContext();
-}
+
 
 namespace miosix {
 
@@ -51,31 +46,6 @@ static unsigned int icrFlags;
 // TODO: DEBUG ONLY
 FixedEventQueue<100,12> queue;
 
-/**
- * \internal
- * DMA2 Channel 4 interrupt handler actual implementation
- */
-void __attribute__((used)) DMA2channel4irqImpl()
-{
-    dmaFlags=DMA2->ISR; //Check
-    if(dmaFlags & DMA_ISR_TEIF4)
-        transferError=true;
-    
-    DMA2->IFCR=DMA_IFCR_CGIF4; //Clear all interrupts
-
-    //TODO: DEBUG ONLY
-    queue.IRQpost([=]() {
-        iprintf("== DMA Received ==\n");
-    });
-    
-    
-    if(!waiting) return;
-    waiting->IRQwakeup();
-	if(waiting->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
-		Scheduler::IRQfindNextThread();
-    waiting=0;
-}
-
 
 /**
  * \internal
@@ -86,14 +56,13 @@ void __attribute__((used)) SDMMCirqImpl()
     sdioFlags=SDMMC1->STA;
 
     if(sdioFlags & (SDMMC_STA_RXOVERR  |
-                    SDMMC_STA_TXUNDERR | SDMMC_STA_DTIMEOUT | SDMMC_STA_DCRCFAIL))
-
+                    SDMMC_STA_TXUNDERR | SDMMC_STA_DTIMEOUT | SDMMC_STA_DCRCFAIL | SDMMC_STA_DABORT | SDMMC_STA_IDMATE))
         transferError=true;
 
     //TODO: DEBUG ONLY
-    queue.IRQpost([=]() {
-        iprintf("FLAGS == 0x%x ==\n", sdioFlags);
-    });
+    //queue.IRQpost([=]() {
+    //    iprintf("FLAGS == 0x%x ==\n", sdioFlags);
+    //});
 
     //Changed: Old value was 0x7ff
     SDMMC1->ICR=0x1fe00fff;//Clear flags
@@ -680,27 +649,17 @@ static void displayBlockTransferError()
  * memory transfer size based on buffer alignment
  * \return the best DMA transfer size for a given buffer alignment 
  */
-static unsigned int dmaTransferCommonSetup(const unsigned char *buffer)
+static void dmaTransferCommonSetup(const unsigned char *buffer)
 {
     //Clear both SDIO and DMA interrupt flags
     SDMMC1->ICR=0x1fe00fff; //Clear interrupts
-    DMA2->IFCR=DMA_IFCR_CGIF4  |
-                DMA_IFCR_CTCIF4  |
-                DMA_IFCR_CHTIF4 |
-                DMA_IFCR_CTEIF4;
+
+    SDMMC1->IDMACTRL = SDMMC_IDMA_IDMAEN & ~(SDMMC_IDMA_IDMABMODE);
+    SDMMC1->IDMABASE0 = reinterpret_cast<unsigned int>(buffer);
     
     transferError=false;
     dmaFlags=sdioFlags=0;
     waiting=Thread::getCurrentThread();
-    
-    //Select DMA transfer size based on buffer alignment. Best performance
-    //is achieved when the buffer is aligned on a 4 byte boundary
-    switch(reinterpret_cast<unsigned int>(buffer) & 0x3)
-    {                    //10 //01 //0
-        case 0:  return DMA_CCR_MSIZE_1; //DMA reads 32bit at a time
-        case 2:  return DMA_CCR_MSIZE_0; //DMA reads 16bit at a time
-        default: return 0;                //DMA reads  8bit at a time
-    }
 }
 
 /**
@@ -726,7 +685,7 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
     
     if(cardType!=SDHC) lba*=512; // Convert to byte address if not SDHC
     
-    unsigned int memoryTransferSize=dmaTransferCommonSetup(buffer);
+    dmaTransferCommonSetup(buffer);
     
     //Data transfer is considered complete once the DMA transfer complete
     //interrupt occurs, that happens when the last data was written in the
@@ -736,33 +695,11 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
                SDMMC_MASK_RXOVERRIE  | //Interrupt on rx underrun
                SDMMC_MASK_TXUNDERRIE | //Interrupt on tx underrun
                SDMMC_MASK_DCRCFAILIE | //Interrupt on data CRC fail
-               SDMMC_MASK_DTIMEOUTIE;  //Interrupt on data timeout
-	DMA2_Channel4->CPAR=reinterpret_cast<unsigned int>(&(SDMMC1->FIFO));
-	DMA2_Channel4->CMAR=reinterpret_cast<unsigned int>(buffer);
-	//Note: DMA2_Stream3->NDTR is don't care in peripheral flow control mode
-    //DMA2->FCR=//DMA_SxFCR_FEIE    | //Interrupt on fifo error
-                      //DMA_SxFCR_DMDIS   | //Fifo enabled
-                      //DMA_SxFCR_FTH_0;    //Take action if fifo half full 
-
-    /*NUumber of DMA transfer to do, this depends on the transfer size and on the 
-    number of blocks to read*/
-    /* 1 block = 512 bytes (<< 9) divided by the transfer size (8, 16, 32 bytes)*/
-    /* nblk * 512 / (2^memoryTransferSize) */
-    unsigned int numberOfTransfers =  nblk << (9 - memoryTransferSize);
-    DMA2_Channel4->CNDTR = numberOfTransfers;
-	DMA2_Channel4->CCR =
-                    (//DMA_SxCR_CHSEL_2   | //Channel 4 (SDIO)
-                     //DMA_SxCR_PBURST_0  | //4-beat bursts read from SDIO
-                     DMA_CCR_PL_0       | //Medium priority DMA stream
-                     memoryTransferSize | //RAM data size depends on alignment
-					 DMA_CCR_PSIZE_1    | //Read 32bit at a time from SDIO
-				     DMA_CCR_MINC       | //Increment RAM pointer
-                     DMA_CCR_TEIE       | //Interrupt on transfer error
-                     DMA_CCR_TCIE       | //Interrupt on transfer complete
-			  	     DMA_CCR_EN         ) & //Start the DMA
-                     ~(DMA_CCR_DIR);     //Peripheral to memory direction 
-    
+               SDMMC_MASK_DTIMEOUTIE | //Interrupt on data timeout
+               SDMMC_MASK_IDMABTCIE  |
+               SDMMC_MASK_DABORTIE;
     SDMMC1->DLEN=nblk*512;
+
     if(waiting==0)
     {
         DBGERR("Premature wakeup\n");
@@ -789,8 +726,6 @@ static bool multipleBlockRead(unsigned char *buffer, unsigned int nblk,
         transferError=true;
         DBG("TRANSFER ERROR\n");
     }
-    DMA2_Channel4->CCR=0;
-    while(DMA2_Channel4->CCR & DMA_CCR_EN) ; //DMA may take time to stop
     SDMMC1->DCTRL=0; //Disable data path state machine
     SDMMC1->MASK=0;
 
@@ -843,7 +778,7 @@ static bool multipleBlockWrite(const unsigned char *buffer, unsigned int nblk,
         if(cr.validateR1Response()==false) return false;
     }
     
-    unsigned int memoryTransferSize=dmaTransferCommonSetup(buffer);
+    dmaTransferCommonSetup(buffer);
     
     //Data transfer is considered complete once the SDIO transfer complete
     //interrupt occurs, that happens when the last data was written to the SDIO
@@ -853,28 +788,9 @@ static bool multipleBlockWrite(const unsigned char *buffer, unsigned int nblk,
                SDMMC_MASK_RXOVERRIE  | //Interrupt on rx underrun
                SDMMC_MASK_TXUNDERRIE | //Interrupt on tx underrun
                SDMMC_MASK_DCRCFAILIE | //Interrupt on data CRC fail
-               SDMMC_MASK_DTIMEOUTIE;  //Interrupt on data timeout
-	DMA2_Channel4->CPAR=reinterpret_cast<unsigned int>(&SDMMC1->FIFO);
-	DMA2_Channel4->CMAR=reinterpret_cast<unsigned int>(buffer);
-	//Note: DMA2_Stream3->NDTR is don't care in peripheral flow control mode
-    //Quirk: not enabling DMA_SxFCR_FEIE because the SDIO seems to generate
-    //a spurious fifo error. The code was tested and the transfer completes
-    //successfully even in the presence of this fifo error
-    /*
-    DMA2_Stream3->FCR=DMA_SxFCR_DMDIS   | //Fifo enabled
-                      DMA_SxFCR_FTH_1   | //Take action if fifo full
-                      DMA_SxFCR_FTH_0; */
-	DMA2_Channel4->CCR=//DMA_SxCR_CHSEL_2   | //Channel 4 (SDIO) //DMA_SxCR_PBURST_0  | //4-beat bursts write to SDIO
-                     DMA_CCR_PL_0      | //Medium priority DMA stream
-                     memoryTransferSize| //RAM data size depends on alignment
-					 DMA_CCR_PSIZE_1   | //Write 32bit at a time to SDIO
-				     DMA_CCR_MINC      | //Increment RAM pointer
-			         DMA_CCR_DIR       | //Memory to peripheral direction
-                     //DMA_SxCR_PFCTRL    | //Peripheral is flow controller
-                     DMA_CCR_TEIE      | //Interrupt on transfer error
-                     //DMA_SxCR_DMEIE     | //Interrupt on direct mode error
-			  	     DMA_CCR_EN;         //Start the DMA
-    
+               SDMMC_MASK_DTIMEOUTIE | //Interrupt on data timeout
+               SDMMC_MASK_IDMABTCIE  |
+               SDMMC_MASK_DABORTIE;
     SDMMC1->DLEN=nblk*512;
     if(waiting==0)
     {
@@ -896,10 +812,6 @@ static bool multipleBlockWrite(const unsigned char *buffer, unsigned int nblk,
             }
         }
     } else transferError=true;
-    DMA2_Channel4->CCR=0;
-    while(DMA2_Channel4->CCR & DMA_CCR_EN) ; //DMA may take time to stop
-    SDMMC1->DCTRL=0; //Disable data path state machine
-    SDMMC1->MASK=0;
 
     // CMD12 is sent to end CMD25 (multiple block write), or to abort an
     // unfinished write in case of errors
@@ -973,7 +885,7 @@ static void initSDIOPeripheral()
                       | RCC_AHB2ENR_GPIODEN
                       | RCC_AHB2ENR_SDMMC1EN;
 
-        RCC->AHB1ENR |= RCC_AHB1ENR_DMA2EN;
+        //RCC->AHB1ENR |= RCC_AHB1ENR_DMA2EN;
         RCC->CCIPR |= RCC_CCIPR_CLK48SEL_1;
         //RCC_SYNC();
         //RCC_SYNC();
@@ -992,8 +904,6 @@ static void initSDIOPeripheral()
         sdCMD::mode(Mode::ALTERNATE);
         sdCMD::alternateFunction(12);
     }
-    NVIC_SetPriority(DMA2_Channel4_IRQn,15);//Low priority for DMA
-    NVIC_EnableIRQ(DMA2_Channel4_IRQn);
     NVIC_SetPriority(SDMMC1_IRQn,15);//Low priority for SDIO
     NVIC_EnableIRQ(SDMMC1_IRQn);
     
