@@ -49,7 +49,7 @@
 #OPT_BOARD := stm32f303vc_stm32f3discovery
 #OPT_BOARD := stm32f100c8_vaisala_rs41
 #OPT_BOARD := stm32l476rg_nucleo
-OPT_BOARD := stm32l4r9zi_sensortile
+#OPT_BOARD := stm32l4r9zi_sensortile
 
 ##
 ## Optimization flags, choose one.

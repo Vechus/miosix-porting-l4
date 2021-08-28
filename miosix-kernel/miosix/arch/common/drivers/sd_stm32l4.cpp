@@ -11,9 +11,7 @@
 #include <cstring>
 #include <errno.h>
 
-// TODO: DEBUG ONLY
-#include "e20/e20.h"
-#include <thread>
+
 
 //Note: enabling debugging might cause deadlock when using sleep() or reboot()
 //The bug won't be fixed because debugging is only useful for driver development
@@ -40,11 +38,6 @@ static Thread *waiting;             ///< \internal Thread waiting for transfer
 static unsigned int dmaFlags;       ///< \internal DMA status flags
 static unsigned int sdioFlags;      ///< \internal SDIO status flags
 
-//TODO DEBUG ONLY
-static unsigned int icrFlags;
-
-// TODO: DEBUG ONLY
-FixedEventQueue<100,12> queue;
 
 
 /**
@@ -59,10 +52,6 @@ void __attribute__((used)) SDMMCirqImpl()
                     SDMMC_STA_TXUNDERR | SDMMC_STA_DTIMEOUT | SDMMC_STA_DCRCFAIL | SDMMC_STA_DABORT | SDMMC_STA_IDMATE))
         transferError=true;
 
-    //TODO: DEBUG ONLY
-    //queue.IRQpost([=]() {
-    //    iprintf("FLAGS == 0x%x ==\n", sdioFlags);
-    //});
 
     //Changed: Old value was 0x7ff
     SDMMC1->ICR=0x1fe00fff;//Clear flags
@@ -254,8 +243,6 @@ bool CmdResult::validateR1Response()
     if(response & (1<<16)) DBGERR("CSD overwrite\n");
     if(response & (1<<15)) DBGERR("WP ERASE skip\n");
     if(response & (1<<3)) DBGERR("AKE_SEQ error\n");
-    //TODO: DEBYG ONLY
-    DBGERR(">- RESPONSE: 0x%x\n", response);
     return false;
 }
 
@@ -534,10 +521,6 @@ private:
 
 void ClockController::calibrateClockSpeed(SDIODriver *sdio)
 {
-    //TODO: DEBUG ONLY
-    DBG("Automatic speed calibration hacked!\n");
-    setClockSpeed(10);
-    return;
 
     //During calibration we call readBlock() which will call reduceClockSpeed()
     //so not to invalidate calibration clock reduction must not be available
@@ -1085,12 +1068,6 @@ int SDIODriver::ioctl(int cmd, void* arg)
 
 SDIODriver::SDIODriver() : Device(Device::BLOCK)
 {
-    // TODO: DEBUG ONLY
-    std::thread t([](){
-        queue.run();
-    });
-
-    t.detach();
 
     initSDIOPeripheral();
 
